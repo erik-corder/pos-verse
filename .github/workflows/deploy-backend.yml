@@ -1,0 +1,92 @@
+name: POS Backend Azure Deployment
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - 'PosBackend/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup appSettings secrets
+        run: |
+          # Create appsettings.Production.json from template
+          cd PosBackend
+          
+          # Create appsettings.Production.json with secrets
+          cat > appsettings.Production.json << EOF
+          {
+            "Logging": {
+              "LogLevel": {
+                "Default": "Information",
+                "Microsoft.AspNetCore": "Warning"
+              }
+            },
+            "AllowedHosts": "*",
+            "Dataverse": {
+              "ServiceUrl": "${{ secrets.DATAVERSE_SERVICE_URL }}",
+              "ClientId": "${{ secrets.DATAVERSE_CLIENT_ID }}",
+              "ClientSecret": "${{ secrets.DATAVERSE_CLIENT_SECRET }}",
+              "TenantId": "${{ secrets.DATAVERSE_TENANT_ID }}"
+            },
+            "Cors": {
+              "AllowedOrigins": "${{ vars.FRONTEND_URL }}"
+            }
+          }
+          EOF
+
+      - name: Login to container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.CONTAINER_REGISTRY }}
+          username: ${{ secrets.AZUREAPPSERVICE_CONTAINERUSERNAME }}
+          password: ${{ secrets.AZUREAPPSERVICE_CONTAINERPASSWORD }}
+
+      - name: Build and push the Backend Docker image
+        run: |
+          cd PosBackend
+          docker build . --platform linux/amd64 --file ./Dockerfile --tag ${{ vars.CONTAINER_REGISTRY }}/pos-backend:latest --tag ${{ vars.CONTAINER_REGISTRY }}/pos-backend:${{ github.sha }}
+          docker push ${{ vars.CONTAINER_REGISTRY }}/pos-backend:latest
+          docker push ${{ vars.CONTAINER_REGISTRY }}/pos-backend:${{ github.sha }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set Azure Subscription
+        run: |
+          az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Backend Container Application
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az config set extension.use_dynamic_install=yes_without_prompt
+            az containerapp registry set -n ${{ vars.BACKEND_CONTAINER_APP_NAME }} -g ${{ vars.RESOURCE_GROUP }} --server ${{ vars.CONTAINER_REGISTRY }} --username  ${{ secrets.AZUREAPPSERVICE_CONTAINERUSERNAME }} --password ${{ secrets.AZUREAPPSERVICE_CONTAINERPASSWORD }}
+            az containerapp update -n ${{ vars.BACKEND_CONTAINER_APP_NAME }} -g ${{ vars.RESOURCE_GROUP }} --image ${{ vars.CONTAINER_REGISTRY }}/pos-backend:${{ github.sha }}
+
+      - name: Restart Container App
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az containerapp revision restart -n ${{ vars.BACKEND_CONTAINER_APP_NAME }} -g ${{ vars.RESOURCE_GROUP }}

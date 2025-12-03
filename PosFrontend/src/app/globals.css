@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply font-sans text-N-700 bg-white;
+  }
+
+  h1 {
+    @apply text-h1 font-heading font-semibold text-N-800;
+  }
+
+  h2 {
+    @apply text-h2 font-heading font-semibold text-N-800;
+  }
+
+  h3 {
+    @apply text-h3 font-heading font-semibold text-N-800;
+  }
+
+  /* Mobile responsive headings */
+  @media (max-width: 744px) {
+    h1 {
+      @apply text-h1-m;
+    }
+    h2 {
+      @apply text-h2-m;
+    }
+    h3 {
+      @apply text-h3-m;
+    }
+  }
+}
+
+@layer components {
+  /* Display headings with Anton font */
+  .display-heading {
+    @apply font-display;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
